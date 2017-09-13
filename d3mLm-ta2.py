@@ -12,17 +12,57 @@ from core_pb2 import Status
 from core_pb2 import StatusCode
 
 
-sessions = {}
+class SessionManager:
+    def __init__(self):
+        self.sessions = {}
+        self.next = 0
+
+    def startSession(self):
+        session = str(self.next)
+        self.sessions[session] = None
+
+        self.next += 1
+
+        return session
+
+    def endSession(self, session):
+        del self.sessions[session]
+
+
+sm = SessionManager()
 
 
 class D3mLm(CoreServicer):
     def StartSession(self, request, context):
-        print request
-        return SessionResponse(response_info=Response(status=Status(code=StatusCode.Value('OK'),
-                                                                    details='Everything\'s cool')),
-                               user_agent=request.user_agent,
-                               version=request.version,
-                               context=SessionContext(session_id='hello'))
+        session = sm.startSession()
+
+        response = SessionResponse(response_info=Response(status=Status(code=StatusCode.Value('OK'),
+                                                                        details='')),
+                                   user_agent=request.user_agent,
+                                   version=request.version,
+                                   context=SessionContext(session_id=str(session)))
+
+        print '[StartSession]'
+        print 'response:'
+        print response
+
+        return response
+
+    def EndSession(self, request, context):
+        if request.session_id not in sm.sessions:
+            return Response(status=Status(code=StatusCode.Value('SESSION_UNKNOWN'),
+                                          details='session id %s is not valid' % (request.session_id)))
+
+        del sm.sessions[request.session_id]
+
+        response = Response(status=Status(code=StatusCode.Value('OK'),
+                            details=''))
+
+        print '[EndSession]'
+        print 'response:'
+        print response
+
+        return response
 
 
 def main():
@@ -30,6 +70,8 @@ def main():
     add_CoreServicer_to_server(D3mLm(), server)
     server.add_insecure_port('[::]:50001')
     server.start()
+
+    print 'Server started, waiting for requests'
 
     try:
         while True:
