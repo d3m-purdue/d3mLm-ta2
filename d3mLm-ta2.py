@@ -64,6 +64,12 @@ class D3mLm(CoreServicer):
 
         return response
 
+    def CreatePipelines(self, req, ctx):
+        pass
+
+    def ExecutePipeline(self, req, ctx):
+        pass
+
 
 def main():
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
