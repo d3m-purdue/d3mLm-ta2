@@ -1,6 +1,6 @@
 from concurrent import futures
 import grpc
-import json
+import random
 import rpy2.robjects
 import time
 
@@ -9,9 +9,16 @@ from core_pb2_grpc import add_CoreServicer_to_server
 
 from core_pb2 import SessionContext
 from core_pb2 import SessionResponse
+from core_pb2 import PipelineCreateResult
+from core_pb2 import Pipeline
+from core_pb2 import OutputType
+from core_pb2 import Score
+from core_pb2 import Metric
 from core_pb2 import Response
+from core_pb2 import Progress
 from core_pb2 import Status
 from core_pb2 import StatusCode
+from core_pb2 import TaskType
 
 
 # Load the d3mLm R library and extract the modeling functions from it.
@@ -74,7 +81,28 @@ class D3mLm(CoreServicer):
         return response
 
     def CreatePipelines(self, req, ctx):
-        pass
+        print req.context.session_id
+
+        print TaskType.Name(req.task)
+        print req.task_description
+
+        print req.train_features
+        print req.target_features
+
+        yield PipelineCreateResult(response_info=None,
+                                   progress_info=Progress.Value('SUBMITTED'),
+                                   pipeline_id='hello',
+                                   pipeline_info=None)
+
+        time.sleep(random.random() * 3)
+
+        yield PipelineCreateResult(response_info=Response(status=Status(code=StatusCode.Value('OK'))),
+                                   progress_info=Progress.Value('COMPLETED'),
+                                   pipeline_id='hello',
+                                   pipeline_info=Pipeline(predict_result_uris=['baf'],
+                                                          output=OutputType.Value('REAL'),
+                                                          scores=[Score(metric=Metric.Value('R_SQUARED'),
+                                                                        value=3.8)]))
 
     def ExecutePipeline(self, req, ctx):
         pass
