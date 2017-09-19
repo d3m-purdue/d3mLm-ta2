@@ -1,5 +1,7 @@
 from concurrent import futures
 import grpc
+import json
+import rpy2.robjects
 import time
 
 from core_pb2_grpc import CoreServicer
@@ -10,6 +12,13 @@ from core_pb2 import SessionResponse
 from core_pb2 import Response
 from core_pb2 import Status
 from core_pb2 import StatusCode
+
+
+# Load the d3mLm R library and extract the modeling functions from it.
+rpy2.robjects.r('library("d3mLm")')
+run_lm = rpy2.robjects.r['run_lm']
+run_quadratic = rpy2.robjects.r['run_quadratic']
+run_loess = rpy2.robjects.r['run_loess']
 
 
 class SessionManager:
