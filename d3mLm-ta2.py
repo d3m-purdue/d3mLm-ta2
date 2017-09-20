@@ -1,9 +1,14 @@
 from concurrent import futures
+import csv
 import grpc
+import gzip
 import itertools
+import json
+import os
 import rpy2.robjects
 import string
 import time
+import urlparse
 
 from core_pb2_grpc import CoreServicer
 from core_pb2_grpc import add_CoreServicer_to_server
@@ -29,8 +34,44 @@ run_quadratic = rpy2.robjects.r['run_quadratic']
 run_loess = rpy2.robjects.r['run_loess']
 
 
-def doStuff():
-    pass
+def make_frame(data):
+    for k in data:
+        data[k] = rpy2.robjects.FloatVector(data[k])
+
+    return rpy2.robjects.DataFrame(data)
+
+
+def transpose(mat):
+    return map(list, zip(*mat))
+
+
+def promote(value):
+    try:
+        value = int(value)
+    except ValueError:
+        try:
+            value = float(value)
+        except ValueError:
+            pass
+
+    return value
+
+
+def get_dataset(name):
+    datafile = os.path.abspath(os.path.join(os.environ.get('TA2_DATA_DIR', './'), name, 'data', 'trainData.csv.gz'))
+
+    try:
+        reader = csv.reader(gzip.GzipFile(datafile))
+    except IOError:
+        try:
+            datafile = datafile[0:-3]
+            reader = csv.reader(open(datafile))
+        except IOError:
+            raise RuntimeError('could not open datafile for dataset %s' % (name))
+
+    rows = list(reader)
+
+    return {k: map(promote, v) for k, v in zip(rows[0], transpose(rows[1:]))}
 
 
 def all_strings():
@@ -111,8 +152,49 @@ class D3mLm(CoreServicer):
                                    pipeline_id=None,
                                    pipeline_info=None)
 
-        # TODO: set up args; make call into d3mLm; get result
-        doStuff()
+        # Parse the train_features specs.
+        def parse_feature(feat):
+            comp = urlparse.urlparse(feat)
+
+            if comp.scheme != 'file':
+                raise RuntimeError('uri scheme must be file!')
+
+            # Interpret the path as a filepath (from some base directory
+            # containing data files), with the final component referring to a
+            # column name within the data file.
+            (filename, column) = os.path.split(comp.path)
+
+            # Strip any leading slash.
+            if filename and filename[0] == '/':
+                filename = filename[1:]
+
+            return (filename, column)
+
+        # A helper function to load data columns from the appropriate files.
+        def load_data(dataset, column, table={}):
+            # Insert the dataset into the memoization table if it's not there.
+            if dataset not in table:
+                table[dataset] = get_dataset(dataset)
+
+            # Extract the columnar values from the dataset
+            if column not in table[dataset]:
+                raise RuntimeError('dataset %s has no column %s' % (dataset, column))
+            return table[dataset][column]
+
+        # Gather up the columns used for training.
+        train_features = map(lambda x: parse_feature(x.data_uri), req.train_features)
+        train_data = {k: v for k, v in map(lambda x: (x[1], load_data(*x)), train_features)}
+        train_data_cols = train_data.keys()
+
+        # Extract the column used for prediction.
+        pred_feature = parse_feature(req.target_features[0].data_uri)
+        if pred_feature[1] not in train_data:
+            pred_data = load_data(*pred_feature)
+            train_data[pred_feature[1]] = pred_data
+
+        data_frame = make_frame(train_data)
+        result = json.loads(str(run_lm(data_frame, pred_feature[1], rpy2.robjects.StrVector(train_data_cols))))
+        print result['diag_model']['r.squared']
 
         name = sm.createPipeline(req.context.session_id)
 

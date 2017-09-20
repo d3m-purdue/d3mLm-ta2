@@ -40,12 +40,11 @@ def main():
 
     # Construct a pipeline create request.
     x = PipelineCreateRequest(context=use.context,
-                              train_features=[Feature(feature_id='foo', data_uri='foo'),
-                                              Feature(feature_id='bar', data_uri='foo'),
-                                              Feature(feature_id='baz', data_uri='foo')],
+                              train_features=[Feature(feature_id='foo', data_uri='file:///o_185/Slugging_pct'),
+                                              Feature(feature_id='foo', data_uri='file:///o_185/At_bats')],
                               task=TaskType.Value('REGRESSION'),
                               task_description='Super cool task!',
-                              target_features=[Feature(feature_id='bam', data_uri='bam')])
+                              target_features=[Feature(feature_id='bam', data_uri='file:///o_185/Runs')])
     resp = stub.CreatePipelines(x)
     for r in resp:
         print r
