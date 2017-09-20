@@ -1,7 +1,8 @@
 from concurrent import futures
 import grpc
-import random
+import itertools
 import rpy2.robjects
+import string
 import time
 
 from core_pb2_grpc import CoreServicer
@@ -28,14 +29,25 @@ run_quadratic = rpy2.robjects.r['run_quadratic']
 run_loess = rpy2.robjects.r['run_loess']
 
 
+def doStuff():
+    pass
+
+
+def all_strings():
+    for i in itertools.count(1):
+        for s in map(lambda x: ''.join(list(x)), itertools.product(string.ascii_lowercase, repeat=i)):
+            yield s
+
+
 class SessionManager:
     def __init__(self):
         self.sessions = {}
         self.next = 0
+        self.names = all_strings()
 
     def startSession(self):
         session = str(self.next)
-        self.sessions[session] = None
+        self.sessions[session] = {}
 
         self.next += 1
 
@@ -44,6 +56,11 @@ class SessionManager:
     def endSession(self, session):
         del self.sessions[session]
 
+    def createPipeline(self, session):
+        name = next(self.names)
+        self.sessions[session][name] = None
+
+        return name
 
 sm = SessionManager()
 
@@ -91,14 +108,19 @@ class D3mLm(CoreServicer):
 
         yield PipelineCreateResult(response_info=None,
                                    progress_info=Progress.Value('SUBMITTED'),
-                                   pipeline_id='hello',
+                                   pipeline_id=None,
                                    pipeline_info=None)
 
-        time.sleep(random.random() * 3)
+        # TODO: set up args; make call into d3mLm; get result
+        doStuff()
+
+        name = sm.createPipeline(req.context.session_id)
+
+        print sm.sessions
 
         yield PipelineCreateResult(response_info=Response(status=Status(code=StatusCode.Value('OK'))),
                                    progress_info=Progress.Value('COMPLETED'),
-                                   pipeline_id='hello',
+                                   pipeline_id=name,
                                    pipeline_info=Pipeline(predict_result_uris=['baf'],
                                                           output=OutputType.Value('REAL'),
                                                           scores=[Score(metric=Metric.Value('R_SQUARED'),
