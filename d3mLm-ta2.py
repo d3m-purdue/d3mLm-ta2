@@ -2,11 +2,9 @@ from concurrent import futures
 import csv
 import grpc
 import gzip
-import itertools
 import json
 import os
 import rpy2.robjects
-import string
 import time
 import urlparse
 
@@ -74,17 +72,10 @@ def get_dataset(name):
     return {k: map(promote, v) for k, v in zip(rows[0], transpose(rows[1:]))}
 
 
-def all_strings():
-    for i in itertools.count(1):
-        for s in map(lambda x: ''.join(list(x)), itertools.product(string.ascii_lowercase, repeat=i)):
-            yield s
-
-
 class SessionManager:
     def __init__(self):
         self.sessions = {}
         self.next = 0
-        self.names = all_strings()
 
     def startSession(self):
         session = str(self.next)
@@ -97,11 +88,8 @@ class SessionManager:
     def endSession(self, session):
         del self.sessions[session]
 
-    def createPipeline(self, session):
-        name = next(self.names)
-        self.sessions[session][name] = None
-
-        return name
+    def addPipeline(self, session, id):
+        self.sessions[session][id] = None
 
 sm = SessionManager()
 
@@ -192,21 +180,31 @@ class D3mLm(CoreServicer):
             pred_data = load_data(*pred_feature)
             train_data[pred_feature[1]] = pred_data
 
-        data_frame = make_frame(train_data)
-        result = json.loads(str(run_lm(data_frame, pred_feature[1], rpy2.robjects.StrVector(train_data_cols))))
-        print result['diag_model']['r.squared']
+        # Run the linear model and parse the result.
+        result = json.loads(str(run_lm(make_frame(train_data), pred_feature[1], rpy2.robjects.StrVector(train_data_cols))))
 
-        name = sm.createPipeline(req.context.session_id)
+        # Grab the pipeline id and store it in the session table.
+        pipeline_id = result['id']
+        sm.addPipeline(req.context.session_id, pipeline_id)
 
-        print sm.sessions
+        # Extract the results of running the model on the training data and save
+        # to disk.
+        fitted = result['diag_data']['.fitted']
+        print fitted
+        outfile = os.path.abspath(os.path.join(os.environ.get('TA2_OUT_DIR'), '%s-%f.csv' % (pipeline_id, time.time())))
+        with open(outfile, 'wb') as f:
+            writer = csv.writer(f)
+            outdata = map(lambda x: [x], [pred_feature[1]] + fitted)
+            print outdata
+            writer.writerows(outdata)
 
         yield PipelineCreateResult(response_info=Response(status=Status(code=StatusCode.Value('OK'))),
                                    progress_info=Progress.Value('COMPLETED'),
-                                   pipeline_id=name,
-                                   pipeline_info=Pipeline(predict_result_uris=['baf'],
+                                   pipeline_id=pipeline_id,
+                                   pipeline_info=Pipeline(predict_result_uris=['file://%s' % (outfile)],
                                                           output=OutputType.Value('REAL'),
                                                           scores=[Score(metric=Metric.Value('R_SQUARED'),
-                                                                        value=3.8)]))
+                                                                        value=result['diag_model']['r.squared'])]))
 
     def ExecutePipeline(self, req, ctx):
         pass

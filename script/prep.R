@@ -2,6 +2,7 @@ install.packages('curl', lib='./rlib', repos='http://cran.rstudio.com')
 install.packages('devtools', lib='./rlib', repos='http://cran.rstudio.com')
 install.packages('httr', lib='./rlib', repos='http://cran.rstudio.com')
 install.packages('withr', lib='./rlib', repos='http://cran.rstudio.com')
+install.packages('digest', lib='./rlib', repos='http://cran.rstudio.com')
 
 library(curl, lib.loc='./rlib')
 library(withr, lib.loc='./rlib')
