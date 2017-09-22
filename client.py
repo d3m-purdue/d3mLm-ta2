@@ -2,6 +2,7 @@ import grpc
 
 from core_pb2 import Feature
 from core_pb2 import PipelineCreateRequest
+from core_pb2 import PipelineExecuteRequest
 from core_pb2 import SessionRequest
 from core_pb2 import SessionContext
 from core_pb2 import TaskType
@@ -46,6 +47,16 @@ def main():
                               task_description='Super cool task!',
                               target_features=[Feature(feature_id='bam', data_uri='file:///o_185/Runs')])
     resp = stub.CreatePipelines(x)
+
+    pipeline_id = None
+    for r in resp:
+        print r
+        if r.pipeline_id:
+            pipeline_id = r.pipeline_id
+
+    resp = stub.ExecutePipeline(PipelineExecuteRequest(context=use.context,
+                                                       pipeline_id=pipeline_id,
+                                                       predict_features=[Feature(feature_id='foo', data_uri='file:///o_185/At_bats')]))
     for r in resp:
         print r
 

@@ -14,6 +14,7 @@ from core_pb2_grpc import add_CoreServicer_to_server
 from core_pb2 import SessionContext
 from core_pb2 import SessionResponse
 from core_pb2 import PipelineCreateResult
+from core_pb2 import PipelineExecuteResult
 from core_pb2 import Pipeline
 from core_pb2 import OutputType
 from core_pb2 import Score
@@ -30,6 +31,7 @@ rpy2.robjects.r('library("d3mLm")')
 run_lm = rpy2.robjects.r['run_lm']
 run_quadratic = rpy2.robjects.r['run_quadratic']
 run_loess = rpy2.robjects.r['run_loess']
+predict_model = rpy2.robjects.r['predict_model']
 
 
 def make_frame(data):
@@ -37,6 +39,10 @@ def make_frame(data):
         data[k] = rpy2.robjects.FloatVector(data[k])
 
     return rpy2.robjects.DataFrame(data)
+
+
+def make_filename(tag):
+    return os.path.join(os.environ.get('TA2_OUT_DIR'), '%s-%f.csv' % (tag, time.time()))
 
 
 def transpose(mat):
@@ -53,6 +59,44 @@ def promote(value):
             pass
 
     return value
+
+
+# A helper function to load data columns from the appropriate files.
+def load_data(dataset, column, table={}):
+    # Insert the dataset into the memoization table if it's not there.
+    if dataset not in table:
+        table[dataset] = get_dataset(dataset)
+
+    # Extract the columnar values from the dataset
+    if column not in table[dataset]:
+        raise RuntimeError('dataset %s has no column %s' % (dataset, column))
+    return table[dataset][column]
+
+
+def dump_column(outfile, column, data):
+    with open(outfile, 'wb') as f:
+        writer = csv.writer(f)
+        outdata = map(lambda x: [x], [column] + data)
+        writer.writerows(outdata)
+
+
+# Parse the train_features specs.
+def parse_feature(feat):
+    comp = urlparse.urlparse(feat)
+
+    if comp.scheme != 'file':
+        raise RuntimeError('uri scheme must be file!')
+
+    # Interpret the path as a filepath (from some base directory
+    # containing data files), with the final component referring to a
+    # column name within the data file.
+    (filename, column) = os.path.split(comp.path)
+
+    # Strip any leading slash.
+    if filename and filename[0] == '/':
+        filename = filename[1:]
+
+    return (filename, column)
 
 
 def get_dataset(name):
@@ -140,35 +184,6 @@ class D3mLm(CoreServicer):
                                    pipeline_id=None,
                                    pipeline_info=None)
 
-        # Parse the train_features specs.
-        def parse_feature(feat):
-            comp = urlparse.urlparse(feat)
-
-            if comp.scheme != 'file':
-                raise RuntimeError('uri scheme must be file!')
-
-            # Interpret the path as a filepath (from some base directory
-            # containing data files), with the final component referring to a
-            # column name within the data file.
-            (filename, column) = os.path.split(comp.path)
-
-            # Strip any leading slash.
-            if filename and filename[0] == '/':
-                filename = filename[1:]
-
-            return (filename, column)
-
-        # A helper function to load data columns from the appropriate files.
-        def load_data(dataset, column, table={}):
-            # Insert the dataset into the memoization table if it's not there.
-            if dataset not in table:
-                table[dataset] = get_dataset(dataset)
-
-            # Extract the columnar values from the dataset
-            if column not in table[dataset]:
-                raise RuntimeError('dataset %s has no column %s' % (dataset, column))
-            return table[dataset][column]
-
         # Gather up the columns used for training.
         train_features = map(lambda x: parse_feature(x.data_uri), req.train_features)
         train_data = {k: v for k, v in map(lambda x: (x[1], load_data(*x)), train_features)}
@@ -191,12 +206,8 @@ class D3mLm(CoreServicer):
         # to disk.
         fitted = result['diag_data']['.fitted']
         print fitted
-        outfile = os.path.abspath(os.path.join(os.environ.get('TA2_OUT_DIR'), '%s-%f.csv' % (pipeline_id, time.time())))
-        with open(outfile, 'wb') as f:
-            writer = csv.writer(f)
-            outdata = map(lambda x: [x], [pred_feature[1]] + fitted)
-            print outdata
-            writer.writerows(outdata)
+        outfile = make_filename(pipeline_id)
+        dump_column(outfile, pred_feature[1], fitted)
 
         yield PipelineCreateResult(response_info=Response(status=Status(code=StatusCode.Value('OK'))),
                                    progress_info=Progress.Value('COMPLETED'),
@@ -207,7 +218,25 @@ class D3mLm(CoreServicer):
                                                                         value=result['diag_model']['r.squared'])]))
 
     def ExecutePipeline(self, req, ctx):
-        pass
+        # Check for valid session/pipeline.
+        session_id = req.context.session_id
+        if session_id not in sm.sessions or req.pipeline_id not in sm.sessions[session_id]:
+            # TODO return failure message
+            pass
+
+        # Prepare the input data.
+        data = {column: load_data(filename, column) for filename, column in map(lambda x: parse_feature(x.data_uri), req.predict_features)}
+        column_names = data.keys()
+
+        # Run the model.
+        results = json.loads(str(predict_model(req.pipeline_id, make_frame(data), rpy2.robjects.StrVector(column_names))))
+        outfile = make_filename(req.pipeline_id)
+        dump_column(outfile, 'predicted', results['fitted'])
+
+        yield PipelineExecuteResult(response_info=Response(status=Status(code=StatusCode.Value('OK'))),
+                                    progress_info=Progress.Value('COMPLETED'),
+                                    pipeline_id=req.pipeline_id,
+                                    result_uris=['file://%s' % (outfile)])
 
 
 def main():
