@@ -1,3 +1,4 @@
+import argparse
 from concurrent import futures
 import csv
 from google.protobuf import text_format
@@ -6,6 +7,7 @@ import gzip
 import json
 import os
 import rpy2.robjects
+import sys
 import time
 import urlparse
 
@@ -13,6 +15,8 @@ from core_pb2_grpc import CoreServicer
 from core_pb2_grpc import add_CoreServicer_to_server
 
 import core_pb2 as cpb
+
+outdir = None
 
 # Load the d3mLm R library and extract the modeling functions from it.
 rpy2.robjects.r('library("d3mLm")')
@@ -34,7 +38,7 @@ def make_frame(data):
 
 
 def make_filename(tag):
-    return os.path.abspath(os.path.join(os.environ.get('TA2_OUT_DIR'), '%s-%f.csv' % (tag, time.time())))
+    return os.path.abspath(os.path.join(outdir, '%s-%f.csv' % (tag, time.time())))
 
 
 def transpose(mat):
@@ -74,26 +78,18 @@ def dump_column(outfile, column, data):
 
 # Parse the train_features specs.
 def parse_feature(feat):
-    comp = urlparse.urlparse(feat)
+    comp = urlparse.urlparse(feat.data_uri)
 
     if comp.scheme != 'file':
         raise RuntimeError('uri scheme must be file!')
 
-    # Interpret the path as a filepath (from some base directory
-    # containing data files), with the final component referring to a
-    # column name within the data file.
-    (filename, column) = os.path.split(comp.path)
-
-    # Strip any leading slash.
-    if filename and filename[0] == '/':
-        filename = filename[1:]
+    filename = comp.path
+    column = feat.feature_id
 
     return (filename, column)
 
 
-def get_dataset(name):
-    datafile = os.path.abspath(os.path.join(os.environ.get('TA2_DATA_DIR', './'), name, 'data', 'trainData.csv.gz'))
-
+def get_dataset(datafile):
     try:
         reader = csv.reader(gzip.GzipFile(datafile))
     except IOError:
@@ -101,7 +97,7 @@ def get_dataset(name):
             datafile = datafile[0:-3]
             reader = csv.reader(open(datafile))
         except IOError:
-            raise RuntimeError('could not open datafile for dataset %s' % (name))
+            raise RuntimeError('could not open datafile for dataset %s' % (datafile))
 
     rows = list(reader)
 
@@ -180,12 +176,12 @@ class D3mLm(CoreServicer):
         yield prog
 
         # Gather up the columns used for training.
-        train_features = map(lambda x: parse_feature(x.data_uri), req.train_features)
+        train_features = map(lambda x: parse_feature(x), req.train_features)
         train_data = {k: v for k, v in map(lambda x: (x[1], load_data(*x)), train_features)}
         train_data_cols = train_data.keys()
 
         # Extract the column used for prediction.
-        pred_feature = parse_feature(req.target_features[0].data_uri)
+        pred_feature = parse_feature(req.target_features[0])
         if pred_feature[1] not in train_data:
             pred_data = load_data(*pred_feature)
             train_data[pred_feature[1]] = pred_data
@@ -229,7 +225,7 @@ class D3mLm(CoreServicer):
             pass
 
         # Prepare the input data.
-        data = {column: load_data(filename, column) for filename, column in map(lambda x: parse_feature(x.data_uri), req.predict_features)}
+        data = {column: load_data(filename, column) for filename, column in map(lambda x: parse_feature(x), req.predict_features)}
         column_names = data.keys()
 
         # Run the model.
@@ -248,6 +244,16 @@ class D3mLm(CoreServicer):
 
 
 def main():
+    # Set up argument parsing.
+    parser = argparse.ArgumentParser(description='Purdue team mock TA2 server')
+    parser.add_argument('--outdir', type=str, required=True, help='Location to write output files')
+
+    # Parse command line arguments.
+    args = parser.parse_args(sys.argv[1:])
+    global outdir
+    outdir = os.path.abspath(args.outdir)
+
+    # Set up and launch the server process.
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     add_CoreServicer_to_server(D3mLm(), server)
     server.add_insecure_port('[::]:50001')
