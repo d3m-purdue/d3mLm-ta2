@@ -1,5 +1,6 @@
 from concurrent import futures
 import csv
+from google.protobuf import text_format
 import grpc
 import gzip
 import json
@@ -23,7 +24,6 @@ from core_pb2 import Response
 from core_pb2 import Progress
 from core_pb2 import Status
 from core_pb2 import StatusCode
-from core_pb2 import TaskType
 
 
 # Load the d3mLm R library and extract the modeling functions from it.
@@ -34,6 +34,10 @@ run_loess = rpy2.robjects.r['run_loess']
 predict_model = rpy2.robjects.r['predict_model']
 
 
+def pretty_format(msg):
+    return text_format.MessageToString(msg, indent=2)
+
+
 def make_frame(data):
     for k in data:
         data[k] = rpy2.robjects.FloatVector(data[k])
@@ -42,7 +46,7 @@ def make_frame(data):
 
 
 def make_filename(tag):
-    return os.path.join(os.environ.get('TA2_OUT_DIR'), '%s-%f.csv' % (tag, time.time()))
+    return os.path.abspath(os.path.join(os.environ.get('TA2_OUT_DIR'), '%s-%f.csv' % (tag, time.time())))
 
 
 def transpose(mat):
@@ -149,8 +153,10 @@ class D3mLm(CoreServicer):
                                    context=SessionContext(session_id=str(session)))
 
         print '[StartSession]'
+        print 'request:'
+        print pretty_format(request)
         print 'response:'
-        print response
+        print pretty_format(response)
 
         return response
 
@@ -166,23 +172,24 @@ class D3mLm(CoreServicer):
 
         print '[EndSession]'
         print 'response:'
-        print response
+        print pretty_format(response)
 
         return response
 
     def CreatePipelines(self, req, ctx):
-        print req.context.session_id
+        print '[CreatePipelines]'
+        print 'request:'
+        print pretty_format(req)
 
-        print TaskType.Name(req.task)
-        print req.task_description
+        prog = PipelineCreateResult(response_info=Response(status=Status(code=StatusCode.Value('OK'))),
+                                    progress_info=Progress.Value('SUBMITTED'),
+                                    pipeline_id=None,
+                                    pipeline_info=None)
 
-        print req.train_features
-        print req.target_features
+        print 'progress:'
+        print pretty_format(prog)
 
-        yield PipelineCreateResult(response_info=None,
-                                   progress_info=Progress.Value('SUBMITTED'),
-                                   pipeline_id=None,
-                                   pipeline_info=None)
+        yield prog
 
         # Gather up the columns used for training.
         train_features = map(lambda x: parse_feature(x.data_uri), req.train_features)
@@ -205,19 +212,28 @@ class D3mLm(CoreServicer):
         # Extract the results of running the model on the training data and save
         # to disk.
         fitted = result['diag_data']['.fitted']
-        print fitted
         outfile = make_filename(pipeline_id)
         dump_column(outfile, pred_feature[1], fitted)
 
-        yield PipelineCreateResult(response_info=Response(status=Status(code=StatusCode.Value('OK'))),
-                                   progress_info=Progress.Value('COMPLETED'),
-                                   pipeline_id=pipeline_id,
-                                   pipeline_info=Pipeline(predict_result_uris=['file://%s' % (outfile)],
-                                                          output=OutputType.Value('REAL'),
-                                                          scores=[Score(metric=Metric.Value('R_SQUARED'),
-                                                                        value=result['diag_model']['r.squared'])]))
+        response = PipelineCreateResult(response_info=Response(status=Status(code=StatusCode.Value('OK'))),
+                                        progress_info=Progress.Value('COMPLETED'),
+                                        pipeline_id=pipeline_id,
+                                        pipeline_info=Pipeline(predict_result_uris=['file://%s' % (outfile)],
+                                                               output=OutputType.Value('REAL'),
+                                                               scores=[Score(metric=Metric.Value('R_SQUARED'),
+                                                                             value=result['diag_model']['r.squared'])]))
+
+        print 'response:'
+        print pretty_format(response)
+
+        yield response
+
 
     def ExecutePipeline(self, req, ctx):
+        print '[ExecutePipeline]'
+        print 'request:'
+        print pretty_format(req)
+
         # Check for valid session/pipeline.
         session_id = req.context.session_id
         if session_id not in sm.sessions or req.pipeline_id not in sm.sessions[session_id]:
@@ -233,10 +249,14 @@ class D3mLm(CoreServicer):
         outfile = make_filename(req.pipeline_id)
         dump_column(outfile, 'predicted', results['fitted'])
 
-        yield PipelineExecuteResult(response_info=Response(status=Status(code=StatusCode.Value('OK'))),
-                                    progress_info=Progress.Value('COMPLETED'),
-                                    pipeline_id=req.pipeline_id,
-                                    result_uris=['file://%s' % (outfile)])
+        response = PipelineExecuteResult(response_info=Response(status=Status(code=StatusCode.Value('OK'))),
+                                         progress_info=Progress.Value('COMPLETED'),
+                                         pipeline_id=req.pipeline_id,
+                                         result_uris=['file://%s' % (outfile)])
+        print 'response:'
+        print pretty_format(response)
+
+        yield response
 
 
 def main():
