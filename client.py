@@ -8,10 +8,13 @@ from core_pb2 import SessionContext
 from core_pb2 import TaskType
 from core_pb2_grpc import CoreStub
 
+import core_pb2
+version = core_pb2.DESCRIPTOR.GetOptions().Extensions[core_pb2.protocol_version]
+
 
 def start_session(stub):
-    response = stub.StartSession(SessionRequest(user_agent='roni',
-                                                version='0.0.1'))
+    response = stub.StartSession(SessionRequest(user_agent='modsquad',
+                                                version=version))
 
     print 'Server sent message: %s' % (response.context.session_id)
     return response
