@@ -12,19 +12,7 @@ import urlparse
 from core_pb2_grpc import CoreServicer
 from core_pb2_grpc import add_CoreServicer_to_server
 
-from core_pb2 import SessionContext
-from core_pb2 import SessionResponse
-from core_pb2 import PipelineCreateResult
-from core_pb2 import PipelineExecuteResult
-from core_pb2 import Pipeline
-from core_pb2 import OutputType
-from core_pb2 import Score
-from core_pb2 import Metric
-from core_pb2 import Response
-from core_pb2 import Progress
-from core_pb2 import Status
-from core_pb2 import StatusCode
-
+import core_pb2 as cpb
 
 # Load the d3mLm R library and extract the modeling functions from it.
 rpy2.robjects.r('library("d3mLm")')
@@ -146,11 +134,11 @@ class D3mLm(CoreServicer):
     def StartSession(self, request, context):
         session = sm.startSession()
 
-        response = SessionResponse(response_info=Response(status=Status(code=StatusCode.Value('OK'),
-                                                                        details='')),
-                                   user_agent=request.user_agent,
-                                   version=request.version,
-                                   context=SessionContext(session_id=str(session)))
+        response = cpb.SessionResponse(response_info=cpb.Response(status=cpb.Status(code=cpb.StatusCode.Value('OK'),
+                                                                                    details='')),
+                                       user_agent=request.user_agent,
+                                       version=request.version,
+                                       context=cpb.SessionContext(session_id=str(session)))
 
         print '[StartSession]'
         print 'request:'
@@ -162,13 +150,13 @@ class D3mLm(CoreServicer):
 
     def EndSession(self, request, context):
         if request.session_id not in sm.sessions:
-            return Response(status=Status(code=StatusCode.Value('SESSION_UNKNOWN'),
-                                          details='session id %s is not valid' % (request.session_id)))
+            return cpb.Response(status=cpb.Status(code=cpb.StatusCode.Value('SESSION_UNKNOWN'),
+                                                  details='session id %s is not valid' % (request.session_id)))
 
         del sm.sessions[request.session_id]
 
-        response = Response(status=Status(code=StatusCode.Value('OK'),
-                            details=''))
+        response = cpb.Response(status=cpb.Status(code=cpb.StatusCode.Value('OK'),
+                                details=''))
 
         print '[EndSession]'
         print 'response:'
@@ -181,10 +169,10 @@ class D3mLm(CoreServicer):
         print 'request:'
         print pretty_format(req)
 
-        prog = PipelineCreateResult(response_info=Response(status=Status(code=StatusCode.Value('OK'))),
-                                    progress_info=Progress.Value('SUBMITTED'),
-                                    pipeline_id=None,
-                                    pipeline_info=None)
+        prog = cpb.PipelineCreateResult(response_info=cpb.Response(status=cpb.Status(code=cpb.StatusCode.Value('OK'))),
+                                        progress_info=cpb.Progress.Value('SUBMITTED'),
+                                        pipeline_id=None,
+                                        pipeline_info=None)
 
         print 'progress:'
         print pretty_format(prog)
@@ -215,13 +203,13 @@ class D3mLm(CoreServicer):
         outfile = make_filename(pipeline_id)
         dump_column(outfile, pred_feature[1], fitted)
 
-        response = PipelineCreateResult(response_info=Response(status=Status(code=StatusCode.Value('OK'))),
-                                        progress_info=Progress.Value('COMPLETED'),
-                                        pipeline_id=pipeline_id,
-                                        pipeline_info=Pipeline(predict_result_uris=['file://%s' % (outfile)],
-                                                               output=OutputType.Value('REAL'),
-                                                               scores=[Score(metric=Metric.Value('R_SQUARED'),
-                                                                             value=result['diag_model']['r.squared'])]))
+        response = cpb.PipelineCreateResult(response_info=cpb.Response(status=cpb.Status(code=cpb.StatusCode.Value('OK'))),
+                                            progress_info=cpb.Progress.Value('COMPLETED'),
+                                            pipeline_id=pipeline_id,
+                                            pipeline_info=cpb.Pipeline(predict_result_uris=['file://%s' % (outfile)],
+                                                                       output=cpb.OutputType.Value('REAL'),
+                                                                       scores=[cpb.Score(metric=cpb.Metric.Value('R_SQUARED'),
+                                                                                         value=result['diag_model']['r.squared'])]))
 
         print 'response:'
         print pretty_format(response)
@@ -249,10 +237,10 @@ class D3mLm(CoreServicer):
         outfile = make_filename(req.pipeline_id)
         dump_column(outfile, 'predicted', results['fitted'])
 
-        response = PipelineExecuteResult(response_info=Response(status=Status(code=StatusCode.Value('OK'))),
-                                         progress_info=Progress.Value('COMPLETED'),
-                                         pipeline_id=req.pipeline_id,
-                                         result_uris=['file://%s' % (outfile)])
+        response = cpb.PipelineExecuteResult(response_info=cpb.Response(status=cpb.Status(code=cpb.StatusCode.Value('OK'))),
+                                             progress_info=cpb.Progress.Value('COMPLETED'),
+                                             pipeline_id=req.pipeline_id,
+                                             result_uris=['file://%s' % (outfile)])
         print 'response:'
         print pretty_format(response)
 
