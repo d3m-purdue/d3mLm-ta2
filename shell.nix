@@ -3,25 +3,28 @@ with import <nixpkgs> {};
 stdenv.mkDerivation {
   name = "d3mlm-ta2-env";
   buildInputs = [
+    # System requirements.
+    curl
+    nodejs-8_x
+    readline
+
+    # Python requirements (enough to get a virtualenv going).
     python27Full
     python27Packages.virtualenv
     python27Packages.pip
 
+    # R requirements.
     R
-    rPackages.devtools
-    rPackages.withr
+    rPackages.broom
+    rPackages.jsonlite
+    rPackages.digest
   ];
   src = null;
   shellHook = ''
     # Allow the use of wheels.
     SOURCE_DATE_EPOCH=$(date +%s)
 
-    # Add the virtualenv path to the shell path.
-    mkdir -p venv
-    export PATH=$PWD/venv/bin:$PATH
-
-    # Add the local R libraries to the R library path.
-    mkdir -p rlib
-    export R_LIBS_SITE=$PWD/rlib:$R_LIBS_SITE
+    # Augment the dynamic linker path
+    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:${R}/lib/R/lib:${readline}/lib
   '';
 }

@@ -1,0 +1,20 @@
+{
+  "name": "d3mlm-ta2",
+  "version": "1.0.0",
+  "description": "A mock TA2 module that creates linear, quadratic, and loess models of input data",
+  "scripts": {
+    "pythonprep": "virtualenv venv && ./venv/bin/pip install -r requirements.txt",
+    "rprep": "mkdir rlib && curl -sL https://github.com/d3m-purdue/d3mLm/archive/master.tar.gz >d3mLm.tar.gz && Rscript script/prep2.R && rm d3mLm.tar.gz",
+    "protobuf": "./venv/bin/python -m grpc_tools.protoc -I proto --python_out=. --grpc_python_out=. core.proto",
+    "server": "R_LIBS=./rlib ./venv/bin/python server.py",
+    "client": "./venv/bin/python client.py"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/d3m-purdue/d3mlm-ta2.git"
+  },
+  "bugs": {
+    "url": "https://github.com/d3m-purdue/d3mlm-ta2/issues"
+  },
+  "homepage": "https://github.com/d3m-purdue/d3mlm-ta2#readme"
+}
