@@ -3,7 +3,6 @@ from concurrent import futures
 import csv
 from google.protobuf import text_format
 import grpc
-import gzip
 import json
 import os
 import rpy2.robjects
@@ -91,13 +90,9 @@ def parse_feature(feat):
 
 def get_dataset(datafile):
     try:
-        reader = csv.reader(gzip.GzipFile(datafile))
+        reader = csv.reader(open(datafile))
     except IOError:
-        try:
-            datafile = datafile[0:-3]
-            reader = csv.reader(open(datafile))
-        except IOError:
-            raise RuntimeError('could not open datafile for dataset %s' % (datafile))
+        raise RuntimeError('could not open datafile for dataset %s' % (datafile))
 
     rows = list(reader)
 
