@@ -246,10 +246,13 @@ class D3mLm(CoreServicer):
 def main():
     # Set up argument parsing.
     parser = argparse.ArgumentParser(description='Purdue team mock TA2 server')
-    parser.add_argument('--outdir', type=str, required=True, help='Location to write output files')
+    parser.add_argument('--outdir', type=str, default=os.environ.get('TA2_OUTDIR'),
+                        help='Location to write output files')
 
     # Parse command line arguments.
     args = parser.parse_args(sys.argv[1:])
+    if args.outdir is None:
+        exit(parser.print_usage())
     global outdir
     outdir = os.path.abspath(args.outdir)
 
