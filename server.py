@@ -23,6 +23,7 @@ run_lm = rpy2.robjects.r['run_lm']
 run_quadratic = rpy2.robjects.r['run_quadratic']
 run_loess = rpy2.robjects.r['run_loess']
 predict_model = rpy2.robjects.r['predict_model']
+na_exclude = rpy2.robjects.r['na.exclude']
 
 
 def pretty_format(msg):
@@ -33,7 +34,7 @@ def make_frame(data):
     for k in data:
         data[k] = rpy2.robjects.FloatVector(data[k])
 
-    return rpy2.robjects.DataFrame(data)
+    return na_exclude(rpy2.robjects.DataFrame(data))
 
 
 def make_filename(tag):
@@ -45,6 +46,9 @@ def transpose(mat):
 
 
 def promote(value):
+    if value == '':
+        return rpy2.robjects.NA_Real
+
     try:
         value = int(value)
     except ValueError:
@@ -57,15 +61,20 @@ def promote(value):
 
 
 # A helper function to load data columns from the appropriate files.
-def load_data(dataset, column, table={}):
+def load_data(dataset, mode, column, table={}):
+    if mode == 'target':
+        datafile = os.path.join(dataset, 'trainTargets.csv')
+    else:
+        datafile = os.path.join(dataset, '%sData.csv' % (mode))
+
     # Insert the dataset into the memoization table if it's not there.
-    if dataset not in table:
-        table[dataset] = get_dataset(dataset)
+    if datafile not in table:
+        table[datafile] = get_dataset(datafile)
 
     # Extract the columnar values from the dataset
-    if column not in table[dataset]:
-        raise RuntimeError('dataset %s has no column %s' % (dataset, column))
-    return table[dataset][column]
+    if column not in table[datafile]:
+        raise RuntimeError('dataset %s has no column %s' % (datafile, column))
+    return table[datafile][column]
 
 
 def dump_column(outfile, column, data):
@@ -172,17 +181,18 @@ class D3mLm(CoreServicer):
 
         # Gather up the columns used for training.
         train_features = map(lambda x: parse_feature(x), req.train_features)
-        train_data = {k: v for k, v in map(lambda x: (x[1], load_data(*x)), train_features)}
+        train_data = {k: v for k, v in map(lambda x: (x[1], load_data(x[0], 'train', x[1])), train_features)}
         train_data_cols = train_data.keys()
 
         # Extract the column used for prediction.
-        pred_feature = parse_feature(req.target_features[0])
-        if pred_feature[1] not in train_data:
-            pred_data = load_data(*pred_feature)
-            train_data[pred_feature[1]] = pred_data
+        pred_features = map(lambda x: parse_feature(x), req.target_features)
+        pred_data = {k: v for k, v in map(lambda x: (x[1], load_data(x[0], 'target', x[1])), pred_features)}
+        pred_data_cols = pred_data.keys()
+        for k, v in pred_data.iteritems():
+            train_data[k] = v
 
         # Run the linear model and parse the result.
-        result = json.loads(str(run_lm(make_frame(train_data), pred_feature[1], rpy2.robjects.StrVector(train_data_cols))))
+        result = json.loads(str(run_lm(make_frame(train_data), pred_data_cols[0], rpy2.robjects.StrVector(train_data_cols))))
 
         # Grab the pipeline id and store it in the session table.
         pipeline_id = result['id']
@@ -192,7 +202,7 @@ class D3mLm(CoreServicer):
         # to disk.
         fitted = result['diag_data']['.fitted']
         outfile = make_filename(pipeline_id)
-        dump_column(outfile, pred_feature[1], fitted)
+        dump_column(outfile, pred_features[0][1], fitted)
 
         response = cpb.PipelineCreateResult(response_info=cpb.Response(status=cpb.Status(code=cpb.StatusCode.Value('OK'))),
                                             progress_info=cpb.Progress.Value('COMPLETED'),
@@ -220,7 +230,7 @@ class D3mLm(CoreServicer):
             pass
 
         # Prepare the input data.
-        data = {column: load_data(filename, column) for filename, column in map(lambda x: parse_feature(x), req.predict_features)}
+        data = {column: load_data(filename, 'train', column) for filename, column in map(lambda x: parse_feature(x), req.predict_features)}
         column_names = data.keys()
 
         # Run the model.
